@@ -879,7 +879,7 @@ for idx, example in enumerate(examples):
 # Footer
 
 <div style="text-align: center; padding: 40px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px; margin-top: 40px;">
-    <h3 style="color: #1a73e8 !important; margin-bottom: 20px;">🤖💬 Human AI Advocate Assistant</h3>
+    <h3 style="color: #1a73e8 !important; margin-bottom: 20px;">"🤖💬 Human AI Advocate Assistant</h3>
     
     <div style="display: flex; justify-content: center; gap: 30px; flex-wrap: wrap; margin: 30px 0;">
         <div>
