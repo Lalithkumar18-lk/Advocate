@@ -1,1 +1,5 @@
-pip install streamlit pandas
+# Required packages
+pip install streamlit pandas SpeechRecognition pyttsx3
+
+# Optional for better voice recognition (on some systems)
+pip install pyaudio
