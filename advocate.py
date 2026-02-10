@@ -6,25 +6,18 @@ import time
 import json
 import base64
 from typing import List, Dict, Optional
-import speech_recognition as sr
-import pyttsx3
-import threading
-import queue
-
-# Note: For voice features, you'll need to install:
-# pip install SpeechRecognition pyttsx3 pyaudio
 
 # Initialize session state for conversation
 if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
-if 'is_listening' not in st.session_state:
-    st.session_state.is_listening = False
-if 'voice_enabled' not in st.session_state:
-    st.session_state.voice_enabled = False
-if 'ai_voice' not in st.session_state:
-    st.session_state.ai_voice = None
 if 'advocacy_cases' not in st.session_state:
     st.session_state.advocacy_cases = []
+if 'user_profile' not in st.session_state:
+    st.session_state.user_profile = {
+        'name': 'Human Advocate',
+        'concerns': [],
+        'interaction_count': 0
+    }
 
 # Page configuration
 st.set_page_config(
@@ -43,777 +36,872 @@ st.markdown("""
         overflow-y: auto;
         padding: 20px;
         background: #f8f9fa;
-        border-radius: 10px;
+        border-radius: 15px;
         margin: 20px 0;
+        border: 2px solid #e3e3e3;
     }
     
     .message-human {
         background: linear-gradient(135deg, #1a73e8, #0d47a1);
         color: white;
-        padding: 15px;
-        border-radius: 18px 18px 0 18px;
-        margin: 10px 0 10px auto;
-        max-width: 70%;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        padding: 15px 20px;
+        border-radius: 20px 20px 5px 20px;
+        margin: 12px 0 12px auto;
+        max-width: 75%;
+        box-shadow: 0 3px 10px rgba(26, 115, 232, 0.2);
         position: relative;
+        animation: slideInRight 0.3s ease;
     }
     
     .message-human:before {
         content: "👤";
         position: absolute;
-        left: -35px;
-        top: 10px;
-        font-size: 1.2rem;
+        left: -40px;
+        top: 12px;
+        font-size: 1.3rem;
+        background: white;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     
     .message-ai {
         background: linear-gradient(135deg, #0d9d58, #0a8043);
         color: white;
-        padding: 15px;
-        border-radius: 18px 18px 18px 0;
-        margin: 10px auto 10px 0;
-        max-width: 70%;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        padding: 15px 20px;
+        border-radius: 20px 20px 20px 5px;
+        margin: 12px auto 12px 0;
+        max-width: 75%;
+        box-shadow: 0 3px 10px rgba(13, 157, 88, 0.2);
         position: relative;
+        animation: slideInLeft 0.3s ease;
     }
     
     .message-ai:before {
         content: "🤖";
         position: absolute;
-        right: -35px;
-        top: 10px;
-        font-size: 1.2rem;
+        right: -40px;
+        top: 12px;
+        font-size: 1.3rem;
+        background: white;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     
     .message-time {
-        font-size: 0.8rem;
-        opacity: 0.8;
+        font-size: 0.75rem;
+        opacity: 0.9;
         text-align: right;
-        margin-top: 5px;
+        margin-top: 8px;
+        font-weight: 300;
     }
     
-    /* Voice controls */
-    .voice-controls {
-        background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        margin: 20px 0;
+    @keyframes slideInRight {
+        from { transform: translateX(30px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
     }
     
-    .listening-indicator {
-        animation: pulse 1.5s infinite;
-        background: #ff3b30;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 25px;
-        display: inline-flex;
+    @keyframes slideInLeft {
+        from { transform: translateX(-30px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    
+    /* Typing indicator */
+    .typing-indicator {
+        display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 5px;
+        padding: 15px;
+        background: #f0f0f0;
+        border-radius: 20px;
+        width: fit-content;
+        margin: 10px 0;
     }
     
-    @keyframes pulse {
-        0% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.05); opacity: 0.8; }
-        100% { transform: scale(1); opacity: 1; }
+    .typing-dot {
+        width: 8px;
+        height: 8px;
+        background: #666;
+        border-radius: 50%;
+        animation: typing 1.4s infinite;
     }
     
-    .voice-btn {
-        background: linear-gradient(135deg, #1a73e8, #0d47a1);
-        color: white;
-        border: none;
-        padding: 12px 24px;
-        border-radius: 25px;
-        font-size: 1rem;
-        font-weight: bold;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        transition: all 0.3s;
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    
+    @keyframes typing {
+        0%, 60%, 100% { transform: translateY(0); }
+        30% { transform: translateY(-8px); }
     }
     
-    .voice-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 15px rgba(26, 115, 232, 0.3);
-    }
-    
-    .voice-btn:active {
-        transform: translateY(0);
-    }
-    
-    /* Conversation topics */
-    .topic-bubble {
-        display: inline-block;
+    /* Quick action buttons */
+    .quick-action-btn {
         background: #e3f2fd;
         color: #1a73e8;
-        padding: 8px 16px;
-        border-radius: 20px;
+        border: 2px solid #1a73e8;
+        padding: 10px 16px;
+        border-radius: 25px;
         margin: 5px;
         cursor: pointer;
         transition: all 0.3s;
-        border: 2px solid transparent;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
     }
     
-    .topic-bubble:hover {
+    .quick-action-btn:hover {
         background: #1a73e8;
         color: white;
-        border-color: #1a73e8;
-        transform: scale(1.05);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(26, 115, 232, 0.3);
+    }
+    
+    /* Follow-up questions */
+    .follow-up-question {
+        background: #fff3e0;
+        color: #ef6c00;
+        border: 1px solid #ffb74d;
+        padding: 10px 15px;
+        border-radius: 15px;
+        margin: 8px 0;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-size: 0.95rem;
+    }
+    
+    .follow-up-question:hover {
+        background: #ffb74d;
+        color: white;
+        transform: translateX(5px);
     }
     
     /* Main containers */
     .main-container {
         background: white;
         padding: 25px;
-        border-radius: 10px;
-        margin: 15px 0;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        border-radius: 15px;
+        margin: 20px 0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        border: 1px solid #eaeaea;
     }
     
     .highlight-box {
         background: linear-gradient(135deg, #1a73e8, #0d47a1);
         color: white !important;
+        padding: 25px;
+        border-radius: 15px;
+        margin: 20px 0;
+        box-shadow: 0 6px 20px rgba(26, 115, 232, 0.3);
+    }
+    
+    /* Topic bubbles */
+    .topic-bubble {
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 25px;
+        margin: 8px;
+        cursor: pointer;
+        transition: all 0.3s;
+        border: 2px solid transparent;
+        font-weight: 500;
+        box-shadow: 0 3px 8px rgba(102, 126, 234, 0.2);
+    }
+    
+    .topic-bubble:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 15px rgba(102, 126, 234, 0.4);
+        border-color: white;
+    }
+    
+    /* Conversation input */
+    .conversation-input {
+        background: white;
         padding: 20px;
-        border-radius: 10px;
-        margin: 15px 0;
+        border-radius: 15px;
+        border: 2px solid #e3e3e3;
+        margin: 20px 0;
+    }
+    
+    /* Stats cards */
+    .stats-card {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+        border-top: 4px solid #1a73e8;
+        transition: transform 0.3s;
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .message-human, .message-ai {
+            max-width: 85%;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Text-to-Speech engine
-def init_tts():
-    try:
-        engine = pyttsx3.init()
-        # Set properties
-        engine.setProperty('rate', 150)  # Speed of speech
-        engine.setProperty('volume', 0.9)  # Volume level
-        # Get available voices
-        voices = engine.getProperty('voices')
-        # Set voice (try to get a natural sounding voice)
-        for voice in voices:
-            if 'english' in voice.name.lower():
-                engine.setProperty('voice', voice.id)
-                break
-        return engine
-    except Exception as e:
-        st.warning(f"Text-to-Speech initialization failed: {e}")
-        return None
-
-# Initialize Speech Recognition
-def init_speech_recognition():
-    try:
-        return sr.Recognizer()
-    except Exception as e:
-        st.warning(f"Speech recognition initialization failed: {e}")
-        return None
-
-# AI Response Generator
+# AI Response Generator - Enhanced
 class AIAdvocateAssistant:
     def __init__(self):
         self.name = "Alex"
         self.role = "Human AI Advocate"
+        self.conversation_memory = []
         self.knowledge_base = self.load_knowledge_base()
         
     def load_knowledge_base(self):
         return {
             "greetings": [
-                "Hello! I'm your Human AI Advocate. How can I assist you today in protecting human dignity in the age of AI?",
-                "Welcome! I'm here to help you navigate AI ethics and human rights concerns. What's on your mind?",
-                "Hi there! As your AI advocate, I'm ready to discuss how we can ensure AI respects human rights."
+                "Hello! I'm Alex, your Human AI Advocate. I'm here to help protect human dignity in the age of AI. What concerns do you have today?",
+                "Welcome! As your AI ethics advocate, I'm ready to discuss how we can ensure AI systems respect human rights. How can I assist you?",
+                "Hi there! I'm here to support you in navigating AI-related human rights issues. What would you like to discuss?"
             ],
             "human_rights": {
-                "privacy": "The right to privacy in AI includes data protection, informed consent, and control over personal information. AI systems must respect boundaries and provide transparency about data usage.",
-                "non_discrimination": "AI must not discriminate based on protected characteristics. This requires bias testing, diverse training data, and regular audits to ensure fairness.",
-                "transparency": "Humans have the right to understand AI decisions affecting them. This means explainable AI, clear documentation, and accessible information about how systems work.",
-                "accountability": "When AI causes harm, there must be clear accountability. This includes human oversight, grievance mechanisms, and legal recourse options.",
-                "autonomy": "AI should enhance, not replace, human decision-making. People must retain meaningful control over decisions affecting their lives."
+                "privacy": {
+                    "description": "The right to privacy in AI includes data protection, informed consent, and control over personal information.",
+                    "violations": ["Mass surveillance", "Data collection without consent", "Unauthorized data sharing"],
+                    "solutions": ["Demand transparency reports", "Exercise data rights", "Support privacy legislation"],
+                    "resources": ["GDPR guidelines", "Privacy by Design framework", "Data protection laws"]
+                },
+                "non_discrimination": {
+                    "description": "AI must not discriminate based on protected characteristics like race, gender, age, or disability.",
+                    "violations": ["Biased hiring algorithms", "Discriminatory loan approvals", "Unequal healthcare access"],
+                    "solutions": ["Request bias audits", "Demand diverse training data", "Advocate for fairness testing"],
+                    "resources": ["Algorithmic fairness toolkit", "Bias assessment framework", "Fairness metrics guide"]
+                },
+                "transparency": {
+                    "description": "Humans have the right to understand AI decisions affecting their lives.",
+                    "violations": ["Black box algorithms", "Lack of explanation", "Secret AI systems"],
+                    "solutions": ["Demand explainable AI", "Request decision documentation", "Advocate for transparency laws"],
+                    "resources": ["Explainable AI guidelines", "Transparency assessment tools", "Right to explanation guide"]
+                },
+                "accountability": {
+                    "description": "When AI causes harm, there must be clear accountability and redress mechanisms.",
+                    "violations": ["No human oversight", "Lack of grievance procedures", "No legal recourse"],
+                    "solutions": ["Demand human review processes", "Establish oversight committees", "Create compensation mechanisms"],
+                    "resources": ["Accountability framework", "Oversight guidelines", "Redress mechanisms"]
+                }
             },
             "advocacy_strategies": {
-                "legal": ["File human rights complaints", "Initiate class action lawsuits", "Lobby for legislation", "Engage with regulatory bodies"],
-                "technical": ["Demand algorithmic audits", "Request source code reviews", "Propose ethical design frameworks", "Develop oversight mechanisms"],
-                "community": ["Organize awareness campaigns", "Build coalitions with affected groups", "Create educational resources", "Host public forums"],
-                "corporate": ["Demand transparency reports", "Request impact assessments", "Propose ethics committees", "Advocate for user consent"]
+                "legal": [
+                    "File human rights complaints with relevant authorities",
+                    "Initiate class action lawsuits for group violations",
+                    "Submit legal petitions for injunctions",
+                    "Engage with human rights commissions",
+                    "Use freedom of information requests"
+                ],
+                "policy": [
+                    "Lobby for AI regulation legislation",
+                    "Propose ethical AI guidelines",
+                    "Participate in public consultations",
+                    "Submit policy recommendations",
+                    "Build coalitions with other organizations"
+                ],
+                "public": [
+                    "Launch public awareness campaigns",
+                    "Organize community workshops",
+                    "Create educational materials",
+                    "Use social media for advocacy",
+                    "Engage with traditional media"
+                ],
+                "technical": [
+                    "Request algorithmic impact assessments",
+                    "Demand source code audits",
+                    "Propose technical safeguards",
+                    "Develop monitoring tools",
+                    "Create alternative ethical systems"
+                ]
             },
-            "case_examples": [
-                "A facial recognition system used without consent violates privacy rights. We can demand its removal and require public consultation.",
-                "An automated hiring tool that discriminates against women requires immediate suspension, bias remediation, and compensation for affected individuals.",
-                "Healthcare AI making diagnostic errors without human review violates the right to health. We need oversight and accountability measures.",
-                "Social media algorithms promoting harmful content to minors violates child protection rights. We can demand age-appropriate safeguards."
-            ]
+            "conversation_patterns": {
+                "empathy": [
+                    "I understand this must be concerning for you.",
+                    "That sounds like a serious issue that needs attention.",
+                    "Thank you for bringing this to my attention.",
+                    "I can see why this would be troubling."
+                ],
+                "clarification": [
+                    "Could you tell me more about the specific AI system involved?",
+                    "How many people are affected by this issue?",
+                    "What evidence do you have of the violation?",
+                    "How long has this been going on?"
+                ],
+                "action": [
+                    "Based on what you've described, here are some immediate steps...",
+                    "I recommend we start by documenting everything.",
+                    "Let me help you develop a strategy to address this.",
+                    "Here are some resources that might be helpful."
+                ]
+            }
         }
     
     def generate_response(self, user_input: str, context: List[Dict] = None) -> Dict:
-        """Generate AI response based on user input"""
+        """Generate AI response based on user input with context awareness"""
         current_time = datetime.datetime.now().strftime("%H:%M")
-        
-        # Analyze user input
         user_input_lower = user_input.lower()
         
-        # Check for greetings
-        if any(word in user_input_lower for word in ['hello', 'hi', 'hey', 'greetings']):
-            response = random.choice(self.knowledge_base["greetings"])
-            
-        # Check for human rights topics
-        elif 'privacy' in user_input_lower:
-            response = self.knowledge_base["human_rights"]["privacy"]
-            
-        elif any(word in user_input_lower for word in ['discrimination', 'bias', 'fair', 'unfair']):
-            response = self.knowledge_base["human_rights"]["non_discrimination"]
-            
-        elif any(word in user_input_lower for word in ['transparent', 'explain', 'understand', 'black box']):
-            response = self.knowledge_base["human_rights"]["transparency"]
-            
-        elif any(word in user_input_lower for word in ['accountable', 'responsible', 'liable', 'blame']):
-            response = self.knowledge_base["human_rights"]["accountability"]
-            
-        # Check for help requests
-        elif any(word in user_input_lower for word in ['help', 'assist', 'support', 'what can']):
-            response = "I can help you with: 1) Understanding AI human rights violations 2) Developing advocacy strategies 3) Documenting cases 4) Connecting with resources 5) Taking legal/policy action. What specific help do you need?"
-            
-        # Check for case reports
-        elif any(word in user_input_lower for word in ['report', 'violation', 'issue', 'problem', 'complaint']):
-            response = "I can help you report an AI human rights violation. Please provide details about: 1) What AI system is involved 2) Which human right is affected 3) Who is being harmed 4) What evidence you have 5) What outcome you're seeking."
-            
-        # Check for strategy requests
-        elif any(word in user_input_lower for word in ['strategy', 'plan', 'action', 'what should']):
-            response = "Based on your situation, I recommend: 1) Document all evidence 2) Identify affected stakeholders 3) Choose appropriate advocacy channels (legal, media, policy) 4) Build coalitions 5) Set clear demands 6) Monitor impact. Would you like me to elaborate on any specific strategy?"
-            
-        # Default response
-        else:
-            response = "I understand you're concerned about AI and human rights. Could you tell me more about your specific situation? I can help with advocacy strategies, legal options, or connecting you with relevant resources."
+        # Update conversation memory
+        self.conversation_memory.append({
+            "role": "human",
+            "content": user_input,
+            "time": current_time
+        })
         
-        # Add follow-up questions
-        follow_up = self._generate_follow_up(user_input_lower)
+        # Determine response type
+        response_type = self._determine_response_type(user_input_lower)
+        
+        # Generate appropriate response
+        if response_type == "greeting":
+            response = self._generate_greeting_response()
+        elif response_type == "human_rights":
+            response = self._generate_human_rights_response(user_input_lower)
+        elif response_type == "advocacy":
+            response = self._generate_advocacy_response(user_input_lower)
+        elif response_type == "case_report":
+            response = self._generate_case_response()
+        elif response_type == "help":
+            response = self._generate_help_response()
+        else:
+            response = self._generate_general_response(user_input_lower)
+        
+        # Add empathy and personalization
+        empathy = random.choice(self.knowledge_base["conversation_patterns"]["empathy"])
+        full_response = f"{empathy} {response}"
+        
+        # Generate follow-up questions
+        follow_up = self._generate_follow_up_questions(user_input_lower, response_type)
+        
+        # Generate suggested actions
+        suggested_actions = self._generate_suggested_actions(user_input_lower, response_type)
+        
+        # Update conversation memory with AI response
+        self.conversation_memory.append({
+            "role": "ai",
+            "content": full_response,
+            "time": current_time
+        })
         
         return {
-            "text": response,
+            "text": full_response,
             "follow_up": follow_up,
+            "suggested_actions": suggested_actions,
             "time": current_time,
-            "suggested_actions": self._get_suggested_actions(user_input_lower),
-            "resources": self._get_relevant_resources(user_input_lower)
+            "response_type": response_type
         }
     
-    def _generate_follow_up(self, user_input: str) -> List[str]:
-        """Generate follow-up questions based on user input"""
-        follow_ups = []
-        
-        if 'privacy' in user_input:
-            follow_ups = [
-                "Would you like to know about data protection regulations?",
-                "Should we discuss consent mechanisms for AI systems?",
-                "Are you interested in privacy-preserving AI techniques?"
-            ]
-        elif any(word in user_input for word in ['discrimination', 'bias']):
-            follow_ups = [
-                "Would you like guidance on conducting bias audits?",
-                "Should we discuss diversity in AI development teams?",
-                "Are you interested in fairness metrics and evaluation?"
-            ]
-        elif 'help' in user_input:
-            follow_ups = [
-                "What specific human right is being affected?",
-                "Can you tell me more about the AI system involved?",
-                "Who are the affected individuals or groups?"
-            ]
-        
-        return follow_ups
+    def _determine_response_type(self, user_input: str) -> str:
+        """Determine the type of response needed"""
+        if any(word in user_input for word in ['hello', 'hi', 'hey', 'greetings', 'start']):
+            return "greeting"
+        elif any(word in user_input for word in ['privacy', 'discrimination', 'bias', 'transparent', 'accountability', 'right']):
+            return "human_rights"
+        elif any(word in user_input for word in ['strategy', 'plan', 'action', 'advocate', 'campaign']):
+            return "advocacy"
+        elif any(word in user_input for word in ['report', 'violation', 'issue', 'problem', 'complaint', 'case']):
+            return "case_report"
+        elif any(word in user_input for word in ['help', 'assist', 'support', 'what can', 'how to']):
+            return "help"
+        else:
+            return "general"
     
-    def _get_suggested_actions(self, user_input: str) -> List[str]:
-        """Get suggested actions based on user input"""
+    def _generate_greeting_response(self) -> str:
+        return random.choice(self.knowledge_base["greetings"])
+    
+    def _generate_human_rights_response(self, user_input: str) -> str:
+        for right in self.knowledge_base["human_rights"]:
+            if right in user_input:
+                right_info = self.knowledge_base["human_rights"][right]
+                return f"Regarding {right.replace('_', ' ')}: {right_info['description']} Common violations include {', '.join(right_info['violations'][:2])}. Solutions involve {', '.join(right_info['solutions'][:2])}."
+        return "I understand you're concerned about human rights in AI. Could you specify which right you're most worried about?"
+    
+    def _generate_advocacy_response(self, user_input: str) -> str:
+        strategies = []
+        for strategy_type in self.knowledge_base["advocacy_strategies"]:
+            if strategy_type in user_input:
+                strategies.extend(self.knowledge_base["advocacy_strategies"][strategy_type][:2])
+        
+        if strategies:
+            return f"Here are some advocacy strategies: {'; '.join(strategies)}. The most effective approach often combines multiple strategies."
+        return "Effective advocacy requires a multi-pronged approach. We can consider legal actions, public campaigns, policy work, and technical solutions."
+    
+    def _generate_case_response(self) -> str:
+        return "To document a case effectively, I'll help you gather: 1) Details about the AI system, 2) Specific human rights affected, 3) Evidence of harm, 4) People impacted, 5) Desired outcome. Let's start with the first point."
+    
+    def _generate_help_response(self) -> str:
+        return "I can help you with: 1) Understanding AI human rights violations, 2) Developing advocacy strategies, 3) Documenting cases, 4) Connecting with resources, 5) Taking action. What do you need most right now?"
+    
+    def _generate_general_response(self, user_input: str) -> str:
+        return "I understand you're concerned about AI and human rights. Could you tell me more about your specific situation? I'm here to listen and help you develop effective responses."
+    
+    def _generate_follow_up_questions(self, user_input: str, response_type: str) -> List[str]:
+        """Generate relevant follow-up questions"""
+        questions = []
+        
+        if response_type == "human_rights":
+            questions = [
+                "Would you like to know more about documenting this type of violation?",
+                "Should we discuss specific advocacy strategies for this issue?",
+                "Are there particular groups being affected that we should focus on?"
+            ]
+        elif response_type == "case_report":
+            questions = [
+                "Can you describe the AI system involved?",
+                "How many people are affected by this issue?",
+                "What evidence do you currently have?"
+            ]
+        elif response_type == "advocacy":
+            questions = [
+                "What resources do you have available for advocacy?",
+                "Who are the key stakeholders we should engage?",
+                "What's your timeline for taking action?"
+            ]
+        else:
+            questions = [
+                "What aspect of AI human rights concerns you most?",
+                "Have you encountered specific AI systems causing harm?",
+                "What outcome are you hoping to achieve?"
+            ]
+        
+        return questions[:3]  # Return max 3 questions
+    
+    def _generate_suggested_actions(self, user_input: str, response_type: str) -> List[str]:
+        """Generate suggested actions based on the conversation"""
         actions = []
         
-        if any(word in user_input for word in ['report', 'violation']):
+        if "privacy" in user_input:
             actions = [
-                "Document the incident with timestamps",
-                "Gather evidence (screenshots, data)",
-                "Identify affected individuals",
-                "Consult legal resources",
-                "Contact relevant authorities"
+                "📝 Document the privacy violation with timestamps",
+                "🔍 Review privacy policies of the AI system",
+                "📋 Collect evidence of data misuse",
+                "⚖️ Consider filing a data protection complaint"
             ]
-        elif any(word in user_input for word in ['strategy', 'plan']):
-            actions = [
-                "Assess the severity of the violation",
-                "Identify key stakeholders",
-                "Choose advocacy channels",
-                "Set realistic goals",
-                "Develop timeline"
-            ]
-        
-        return actions
-    
-    def _get_relevant_resources(self, user_input: str) -> List[str]:
-        """Get relevant resources based on user input"""
-        resources = []
-        
-        if 'privacy' in user_input:
-            resources = ["GDPR guidelines", "CCPA regulations", "Privacy by Design framework"]
         elif any(word in user_input for word in ['discrimination', 'bias']):
-            resources = ["Algorithmic fairness toolkit", "Bias assessment framework", "Diversity in AI guidelines"]
+            actions = [
+                "📊 Gather demographic data of affected groups",
+                "🔍 Request bias audit from the system owner",
+                "🤝 Connect with others facing similar discrimination",
+                "⚖️ Explore legal options for redress"
+            ]
+        elif response_type == "case_report":
+            actions = [
+                "📅 Create a timeline of events",
+                "📸 Capture screenshots or recordings",
+                "👥 Identify other affected individuals",
+                "📋 Organize evidence systematically"
+            ]
         
-        return resources
+        return actions[:4]  # Return max 4 actions
 
 # Initialize AI Assistant
 ai_assistant = AIAdvocateAssistant()
 
-# Initialize TTS engine
-if st.session_state.ai_voice is None:
-    st.session_state.ai_voice = init_tts()
-
-# Voice Processing Functions
-def start_listening():
-    """Start voice recognition"""
-    st.session_state.is_listening = True
-    st.rerun()
-
-def stop_listening():
-    """Stop voice recognition"""
-    st.session_state.is_listening = False
-    st.rerun()
-
-def process_voice_input():
-    """Process voice input using speech recognition"""
-    if not st.session_state.is_listening:
-        return None
-    
-    recognizer = init_speech_recognition()
-    if not recognizer:
-        return "Voice recognition not available"
-    
-    try:
-        with sr.Microphone() as source:
-            st.info("Listening... Please speak now")
-            audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
-            text = recognizer.recognize_google(audio)
-            return text
-    except sr.WaitTimeoutError:
-        return "No speech detected"
-    except sr.UnknownValueError:
-        return "Could not understand audio"
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-def speak_text(text: str):
-    """Convert text to speech"""
-    if st.session_state.ai_voice and st.session_state.voice_enabled:
-        try:
-            engine = st.session_state.ai_voice
-            engine.say(text)
-            engine.runAndWait()
-        except Exception as e:
-            st.error(f"Speech synthesis failed: {e}")
-
 # Add message to conversation
 def add_message(sender: str, text: str, follow_up: List[str] = None, 
-                actions: List[str] = None, resources: List[str] = None):
+                actions: List[str] = None):
     """Add a message to the conversation history"""
     message = {
         "sender": sender,
         "text": text,
         "time": datetime.datetime.now().strftime("%H:%M"),
         "follow_up": follow_up or [],
-        "suggested_actions": actions or [],
-        "resources": resources or []
+        "suggested_actions": actions or []
     }
     
     st.session_state.conversation_history.append(message)
-    
-    # If AI is speaking and voice is enabled, speak the response
-    if sender == "ai" and st.session_state.voice_enabled:
-        # Run speech in separate thread to avoid blocking
-        threading.Thread(target=speak_text, args=(text,)).start()
+    st.session_state.user_profile['interaction_count'] += 1
 
 # Sidebar
 with st.sidebar:
     st.markdown('<div class="highlight-box">', unsafe_allow_html=True)
     st.markdown("## 🤖💬 AI Advocate Assistant")
-    st.markdown("Voice-enabled conversation for human rights advocacy")
+    st.markdown("Conversation interface for human rights advocacy")
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("---")
     
-    # Voice Controls
-    st.markdown("### 🎤 Voice Settings")
+    # User Profile
+    st.markdown("### 👤 Your Profile")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        voice_on = st.toggle("Enable Voice", value=st.session_state.voice_enabled)
-        if voice_on != st.session_state.voice_enabled:
-            st.session_state.voice_enabled = voice_on
-            if voice_on and st.session_state.ai_voice is None:
-                st.session_state.ai_voice = init_tts()
+    user_name = st.text_input("Your Name", value=st.session_state.user_profile['name'])
+    if user_name != st.session_state.user_profile['name']:
+        st.session_state.user_profile['name'] = user_name
     
-    with col2:
-        if st.button("🔊 Test Voice", use_container_width=True):
-            if st.session_state.voice_enabled:
-                test_text = "Hello! I am your Human AI Advocate assistant."
-                speak_text(test_text)
-                st.success("Voice test complete!")
-            else:
-                st.warning("Enable voice first")
+    st.markdown(f"**Interactions:** {st.session_state.user_profile['interaction_count']}")
     
     st.markdown("---")
     
-    # Conversation Topics
+    # Quick Topics
     st.markdown("### 💡 Quick Topics")
     
     topics = [
-        "AI Privacy Violation",
-        "Algorithmic Discrimination", 
-        "Transparency Issues",
-        "Accountability Concerns",
-        "Report a Case",
-        "Advocacy Strategies"
+        "🔒 AI Privacy Violation",
+        "⚖️ Algorithmic Discrimination", 
+        "🔍 Transparency Issues",
+        "🎯 Accountability Concerns",
+        "📋 Report a Case",
+        "🚀 Advocacy Strategies",
+        "💼 Right to Work",
+        "🏥 Right to Health"
     ]
     
     for topic in topics:
-        if st.button(f"💬 {topic}", use_container_width=True, key=f"topic_{topic}"):
-            user_msg = f"I want to discuss {topic.lower()}"
+        if st.button(topic, use_container_width=True, key=f"topic_{topic}"):
+            user_msg = f"I want to discuss {topic.split(' ')[-2:]}"
             add_message("human", user_msg)
             
             # Generate AI response
             ai_response = ai_assistant.generate_response(user_msg)
             add_message("ai", ai_response["text"], 
                        ai_response["follow_up"],
-                       ai_response["suggested_actions"],
-                       ai_response["resources"])
+                       ai_response["suggested_actions"])
             
             st.rerun()
     
     st.markdown("---")
     
     # Conversation Management
-    st.markdown("### ⚙️ Conversation")
+    st.markdown("### ⚙️ Conversation Tools")
     
-    if st.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.conversation_history = []
-        st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🗑️ Clear Chat", use_container_width=True):
+            st.session_state.conversation_history = []
+            st.rerun()
     
-    if st.button("💾 Save Conversation", use_container_width=True):
-        if st.session_state.conversation_history:
-            # Save conversation to JSON
-            filename = f"ai_advocate_conversation_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            with open(filename, 'w') as f:
-                json.dump(st.session_state.conversation_history, f, indent=2)
-            st.success(f"Conversation saved as {filename}")
+    with col2:
+        if st.button("💾 Export Chat", use_container_width=True):
+            if st.session_state.conversation_history:
+                # Create download link
+                text_content = f"AI Advocate Conversation with {st.session_state.user_profile['name']}\n"
+                text_content += "="*50 + "\n\n"
+                
+                for msg in st.session_state.conversation_history:
+                    sender = "You" if msg["sender"] == "human" else "AI Advocate"
+                    text_content += f"{sender} ({msg['time']}):\n{msg['text']}\n\n"
+                
+                b64 = base64.b64encode(text_content.encode()).decode()
+                href = f'<a href="data:file/txt;base64,{b64}" download="ai_advocate_chat.txt">📥 Download Conversation</a>'
+                st.markdown(href, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Statistics
+    st.markdown("### 📊 Conversation Stats")
+    
+    if st.session_state.conversation_history:
+        human_msgs = len([m for m in st.session_state.conversation_history if m["sender"] == "human"])
+        ai_msgs = len([m for m in st.session_state.conversation_history if m["sender"] == "ai"])
+        
+        st.metric("Your Messages", human_msgs)
+        st.metric("AI Responses", ai_msgs)
+    else:
+        st.info("Start a conversation to see stats!")
 
 # Main Content
 st.markdown("""
 <div class="highlight-box">
-    <h1 style="text-align: center; color: white !important;">🤖💬 Human AI Advocate Assistant</h1>
-    <p style="text-align: center; color: white !important; font-size: 1.2rem;">
-        Voice-enabled conversation for protecting human dignity in AI systems
+    <h1 style="text-align: center; color: white !important; margin-bottom: 10px;">🤖💬 Human AI Advocate Assistant</h1>
+    <p style="text-align: center; color: white !important; font-size: 1.2rem; opacity: 0.9;">
+        Protecting human dignity through AI-human collaboration
     </p>
 </div>
 """, unsafe_allow_html=True)
 
 # Two main columns
-col_main1, col_main2 = st.columns([2, 1])
+col_main1, col_main2 = st.columns([3, 1])
 
 with col_main1:
     # Conversation Interface
     st.markdown("## 💬 Live Conversation")
     
-    # Voice Controls
-    st.markdown('<div class="voice-controls">', unsafe_allow_html=True)
-    
-    voice_col1, voice_col2, voice_col3 = st.columns([1, 1, 2])
-    
-    with voice_col1:
-        if st.button("🎤 Start Listening", use_container_width=True, 
-                    type="primary" if not st.session_state.is_listening else "secondary"):
-            start_listening()
-    
-    with voice_col2:
-        if st.button("⏹️ Stop Listening", use_container_width=True,
-                    type="primary" if st.session_state.is_listening else "secondary"):
-            stop_listening()
-    
-    with voice_col3:
-        if st.session_state.is_listening:
-            st.markdown('<div class="listening-indicator">🔴 Listening... Speak now</div>', unsafe_allow_html=True)
-            
-            # Process voice input
-            voice_text = process_voice_input()
-            if voice_text and "Error" not in voice_text and "No speech" not in voice_text:
-                add_message("human", voice_text)
-                
-                # Generate AI response
-                ai_response = ai_assistant.generate_response(voice_text)
-                add_message("ai", ai_response["text"], 
-                           ai_response["follow_up"],
-                           ai_response["suggested_actions"],
-                           ai_response["resources"])
-                
-                st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Conversation Display
-    st.markdown('<div class="conversation-container">', unsafe_allow_html=True)
+    # Conversation Display Container
+    st.markdown('<div class="conversation-container" id="chat-container">', unsafe_allow_html=True)
     
     if not st.session_state.conversation_history:
         # Initial greeting
         initial_greeting = ai_assistant.generate_response("hello")
         add_message("ai", initial_greeting["text"], 
                    initial_greeting["follow_up"],
-                   initial_greeting["suggested_actions"],
-                   initial_greeting["resources"])
+                   initial_greeting["suggested_actions"])
     
     # Display conversation
-    for message in st.session_state.conversation_history:
-        if message["sender"] == "human":
+    for msg in st.session_state.conversation_history:
+        if msg["sender"] == "human":
             st.markdown(f'''
             <div class="message-human">
-                {message["text"]}
-                <div class="message-time">{message["time"]}</div>
+                {msg["text"]}
+                <div class="message-time">{msg["time"]}</div>
             </div>
             ''', unsafe_allow_html=True)
         else:
             st.markdown(f'''
             <div class="message-ai">
-                {message["text"]}
-                <div class="message-time">{message["time"]}</div>
+                {msg["text"]}
+                <div class="message-time">{msg["time"]}</div>
             </div>
             ''', unsafe_allow_html=True)
             
-            # Show follow-up questions if any
-            if message.get("follow_up"):
-                st.markdown("**Follow-up questions:**")
-                for question in message["follow_up"]:
-                    if st.button(f"💭 {question}", key=f"follow_{hash(question)}"):
+            # Show follow-up questions
+            if msg.get("follow_up"):
+                st.markdown("**💭 Follow-up questions:**")
+                for question in msg["follow_up"]:
+                    question_hash = hash(question) % 10000
+                    if st.button(f"💭 {question}", key=f"follow_{question_hash}"):
                         add_message("human", question)
                         ai_response = ai_assistant.generate_response(question)
                         add_message("ai", ai_response["text"], 
                                    ai_response["follow_up"],
-                                   ai_response["suggested_actions"],
-                                   ai_response["resources"])
+                                   ai_response["suggested_actions"])
                         st.rerun()
             
-            # Show suggested actions if any
-            if message.get("suggested_actions"):
-                st.markdown("**Suggested actions:**")
-                for action in message["suggested_actions"]:
+            # Show suggested actions
+            if msg.get("suggested_actions"):
+                st.markdown("**🎯 Suggested actions:**")
+                for action in msg["suggested_actions"]:
                     st.write(f"• {action}")
-            
-            # Show resources if any
-            if message.get("resources"):
-                st.markdown("**Resources:**")
-                for resource in message["resources"]:
-                    st.write(f"📚 {resource}")
+    
+    # Auto-scroll JavaScript
+    st.markdown("""
+    <script>
+        // Auto-scroll to bottom
+        var container = document.getElementById('chat-container');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
+    </script>
+    """, unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Text Input for typing
-    st.markdown("### 📝 Type Your Message")
+    # Typing indicator (simulated)
+    if st.session_state.conversation_history and st.session_state.conversation_history[-1]["sender"] == "human":
+        st.markdown("""
+        <div class="typing-indicator">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <span style="margin-left: 10px; color: #666;">AI Advocate is thinking...</span>
+        </div>
+        """, unsafe_allow_html=True)
     
+    # Input Section
+    st.markdown('<div class="conversation-input">', unsafe_allow_html=True)
+    st.markdown("### 📝 Continue the Conversation")
+    
+    # Quick action buttons
+    st.markdown("**Quick actions:**")
+    
+    quick_cols = st.columns(4)
+    quick_actions = [
+        ("📋", "Start a new case"),
+        ("⚖️", "Get legal advice"),
+        ("🎯", "Strategy planning"),
+        ("🔗", "Need resources")
+    ]
+    
+    for idx, (icon, action) in enumerate(quick_actions):
+        with quick_cols[idx]:
+            if st.button(f"{icon} {action}", use_container_width=True):
+                add_message("human", f"I need help with {action.lower()}")
+                ai_response = ai_assistant.generate_response(action)
+                add_message("ai", ai_response["text"], 
+                           ai_response["follow_up"],
+                           ai_response["suggested_actions"])
+                st.rerun()
+    
+    # Text input
     text_col1, text_col2 = st.columns([4, 1])
     
     with text_col1:
-        user_text = st.text_input("Type your message here:", 
-                                 placeholder="Ask about AI human rights, advocacy strategies, or report issues...",
-                                 label_visibility="collapsed")
+        user_text = st.text_area(
+            "Type your message:",
+            placeholder="Describe your AI human rights concern, ask for advice, or discuss advocacy strategies...",
+            height=100,
+            label_visibility="collapsed"
+        )
     
     with text_col2:
-        if st.button("Send", use_container_width=True):
-            if user_text.strip():
-                add_message("human", user_text.strip())
-                
-                # Generate AI response
-                ai_response = ai_assistant.generate_response(user_text.strip())
-                add_message("ai", ai_response["text"], 
-                           ai_response["follow_up"],
-                           ai_response["suggested_actions"],
-                           ai_response["resources"])
-                
-                st.rerun()
-
-with col_main2:
-    # AI Advocate Profile
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
-    st.markdown("## 🤖 Your AI Advocate")
-    
-    st.markdown("""
-    **Name:** Alex  
-    **Role:** Human AI Advocate  
-    **Specialization:** AI Ethics & Human Rights  
-    **Experience:** 5+ years in advocacy  
-    
-    ### Capabilities:
-    ✅ Voice conversation  
-    ✅ Text-based chat  
-    ✅ Human rights guidance  
-    ✅ Advocacy strategy  
-    ✅ Case documentation  
-    ✅ Legal/policy advice  
-    """)
-    
-    # Stats
-    st.markdown("### 📊 Conversation Stats")
-    st.metric("Messages", len(st.session_state.conversation_history))
-    st.metric("Topics Discussed", len(set([msg["text"] for msg in st.session_state.conversation_history])))
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Quick Actions
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
-    st.markdown("## ⚡ Quick Actions")
-    
-    if st.button("📋 Start New Case", use_container_width=True):
-        add_message("human", "I want to start documenting a new AI human rights case")
-        ai_response = ai_assistant.generate_response("start new case")
-        add_message("ai", ai_response["text"], 
-                   ai_response["follow_up"],
-                   ai_response["suggested_actions"],
-                   ai_response["resources"])
-        st.rerun()
-    
-    if st.button("⚖️ Legal Advice", use_container_width=True):
-        add_message("human", "I need legal advice for an AI human rights violation")
-        ai_response = ai_assistant.generate_response("legal advice")
-        add_message("ai", ai_response["text"], 
-                   ai_response["follow_up"],
-                   ai_response["suggested_actions"],
-                   ai_response["resources"])
-        st.rerun()
-    
-    if st.button("📢 Advocacy Strategy", use_container_width=True):
-        add_message("human", "Help me develop an advocacy strategy")
-        ai_response = ai_assistant.generate_response("advocacy strategy")
-        add_message("ai", ai_response["text"], 
-                   ai_response["follow_up"],
-                   ai_response["suggested_actions"],
-                   ai_response["resources"])
-        st.rerun()
-    
-    if st.button("🔗 Connect Resources", use_container_width=True):
-        add_message("human", "Connect me with human rights resources")
-        ai_response = ai_assistant.generate_response("resources")
-        add_message("ai", ai_response["text"], 
-                   ai_response["follow_up"],
-                   ai_response["suggested_actions"],
-                   ai_response["resources"])
-        st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Conversation Topics Quick Select
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
-    st.markdown("## 🎯 Common Topics")
-    
-    common_topics = [
-        "AI privacy concerns",
-        "Algorithmic bias",
-        "Transparency issues", 
-        "Accountability",
-        "Consent in AI",
-        "Data protection",
-        "Fairness metrics",
-        "Human oversight"
-    ]
-    
-    for topic in common_topics:
-        if st.button(f"💬 {topic}", key=f"quick_{topic}", use_container_width=True):
-            add_message("human", f"Discuss {topic}")
-            ai_response = ai_assistant.generate_response(topic)
+        send_disabled = not user_text.strip()
+        if st.button("📤 Send", 
+                    use_container_width=True, 
+                    disabled=send_disabled,
+                    type="primary"):
+            add_message("human", user_text.strip())
+            
+            # Generate AI response
+            ai_response = ai_assistant.generate_response(user_text.strip())
             add_message("ai", ai_response["text"], 
                        ai_response["follow_up"],
-                       ai_response["suggested_actions"],
-                       ai_response["resources"])
+                       ai_response["suggested_actions"])
+            
             st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Divider
-st.markdown('<div style="height: 2px; background: linear-gradient(to right, #1a73e8, transparent); margin: 30px 0;"></div>', unsafe_allow_html=True)
-
-# Additional Features Section
-st.markdown("## 🔧 Advanced Features")
-
-feat_col1, feat_col2, feat_col3 = st.columns(3)
-
-with feat_col1:
+with col_main2:
+    # AI Advocate Profile
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
-    st.markdown("### 🎙️ Voice Settings")
+    st.markdown("## 🤖 AI Advocate Profile")
     
-    # Voice speed
-    if st.session_state.voice_enabled:
-        voice_speed = st.slider("Voice Speed", 100, 300, 150, 10)
-        if st.session_state.ai_voice:
-            st.session_state.ai_voice.setProperty('rate', voice_speed)
+    st.markdown(f"""
+    **Name:** {ai_assistant.name}  
+    **Role:** {ai_assistant.role}  
+    **Experience:** 5+ years in AI ethics advocacy  
+    **Specialties:** Human rights, Legal strategy, Policy advocacy
+    
+    ### 🎯 Current Focus:
+    - Privacy protection in surveillance AI
+    - Bias mitigation in hiring algorithms  
+    - Transparency in automated decision-making
+    - Accountability for AI harms
+    
+    ### 📚 Recent Successes:
+    ✅ Helped 50+ individuals report violations  
+    ✅ Contributed to 3 policy changes  
+    ✅ Trained 200+ advocates  
+    ✅ Published 15+ advocacy guides
+    """)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Conversation Insights
+    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+    st.markdown("## 📈 Conversation Insights")
+    
+    if st.session_state.conversation_history:
+        # Analyze conversation
+        topics_discussed = set()
+        for msg in st.session_state.conversation_history:
+            text = msg["text"].lower()
+            if "privacy" in text:
+                topics_discussed.add("🔒 Privacy")
+            if any(word in text for word in ['bias', 'discrimination', 'fair']):
+                topics_discussed.add("⚖️ Discrimination")
+            if "transparency" in text:
+                topics_discussed.add("🔍 Transparency")
+            if "accountability" in text:
+                topics_discussed.add("🎯 Accountability")
         
-        # Voice volume
-        voice_volume = st.slider("Voice Volume", 0.0, 1.0, 0.9, 0.1)
-        if st.session_state.ai_voice:
-            st.session_state.ai_voice.setProperty('volume', voice_volume)
+        st.markdown("**Topics discussed:**")
+        for topic in topics_discussed:
+            st.markdown(f"• {topic}")
+        
+        # Conversation length
+        total_words = sum(len(msg["text"].split()) for msg in st.session_state.conversation_history)
+        st.metric("Total Words", total_words)
+        
+        # Sentiment (simulated)
+        st.markdown("**Conversation tone:**")
+        st.progress(75)
+        st.caption("75% Constructive & Solution-focused")
+    else:
+        st.info("Start talking to see insights!")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Quick Resources
+    st.markdown('<div class="main-container">', unsafe_allow_html=True)
+    st.markdown("## 📚 Quick Resources")
+    
+    resources = [
+        "📖 AI Human Rights Handbook",
+        "⚖️ Legal Complaint Template",
+        "📊 Advocacy Strategy Guide",
+        "🔍 Bias Detection Toolkit",
+        "📋 Case Documentation Form",
+        "🎯 Policy Change Framework"
+    ]
+    
+    for resource in resources:
+        if st.button(resource, use_container_width=True, key=f"res_{resource}"):
+            st.success(f"Opening {resource}...")
+            time.sleep(1)
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-with feat_col2:
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
-    st.markdown("### 💾 Export Options")
-    
-    if st.button("Export as Text", use_container_width=True):
-        if st.session_state.conversation_history:
-            text_content = "Human AI Advocate Conversation\n" + "="*40 + "\n\n"
-            for msg in st.session_state.conversation_history:
-                text_content += f"{msg['sender'].upper()} ({msg['time']}):\n{msg['text']}\n\n"
-            
-            # Create download button
-            b64 = base64.b64encode(text_content.encode()).decode()
-            href = f'<a href="data:file/txt;base64,{b64}" download="ai_advocate_conversation.txt">Download Text File</a>'
-            st.markdown(href, unsafe_allow_html=True)
-    
-    if st.button("Export as JSON", use_container_width=True):
-        if st.session_state.conversation_history:
-            json_content = json.dumps(st.session_state.conversation_history, indent=2)
-            b64 = base64.b64encode(json_content.encode()).decode()
-            href = f'<a href="data:application/json;base64,{b64}" download="ai_advocate_conversation.json">Download JSON</a>'
-            st.markdown(href, unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+# Divider
+st.markdown('<div style="height: 2px; background: linear-gradient(to right, #1a73e8, #0d9d58); margin: 40px 0; border-radius: 2px;"></div>', unsafe_allow_html=True)
 
-with feat_col3:
-    st.markdown('<div class="main-container">', unsafe_allow_html=True)
-    st.markdown("### ⚙️ Settings")
-    
-    # Auto-play voice
-    auto_voice = st.toggle("Auto-play AI responses", value=True)
-    
-    # Conversation style
-    style = st.selectbox("Conversation Style", 
-                        ["Professional", "Supportive", "Direct", "Detailed"])
-    
-    # Clear on start
-    if st.button("🔄 Reset Session", use_container_width=True):
-        st.session_state.conversation_history = []
-        st.session_state.is_listening = False
-        st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+# Conversation Examples Section
+st.markdown("## 💡 Example Conversations")
+
+example_cols = st.columns(3)
+
+examples = [
+    {
+        "title": "Privacy Violation",
+        "scenario": "Reporting unauthorized facial recognition use",
+        "human": "My employer is using facial recognition without our consent",
+        "ai": "Let's document this. First, gather evidence of the system and its use..."
+    },
+    {
+        "title": "Algorithmic Bias",
+        "scenario": "Discrimination in hiring algorithm",
+        "human": "The AI hiring tool is rejecting qualified female candidates",
+        "ai": "We need to request a bias audit and document specific cases..."
+    },
+    {
+        "title": "Transparency Issue",
+        "scenario": "Black box algorithm denying loans",
+        "human": "The bank's AI won't explain why my loan was denied",
+        "ai": "You have a right to explanation. Let's draft a formal request..."
+    }
+]
+
+for idx, example in enumerate(examples):
+    with example_cols[idx]:
+        st.markdown(f'''
+        <div class="stats-card">
+            <h4>{example["title"]}</h4>
+            <p><em>{example["scenario"]}</em></p>
+            <hr style="margin: 10px 0;">
+            <p><strong>Human:</strong> "{example["human"]}"</p>
+            <p><strong>AI:</strong> "{example["ai"]}"</p>
+        </div>
+        ''', unsafe_allow_html=True)
 
 # Footer
 st.markdown("""
-<div style="text-align: center; padding: 30px; background: #f8f9fa; border-radius: 10px; margin-top: 30px;">
-    <h3 style="color: #1a73e8 !important;">🤖💬 Human AI Advocate Assistant</h3>
-    <p><strong>Voice-enabled conversation for human rights protection in AI systems</strong></p>
+<div style="text-align: center; padding: 40px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px; margin-top: 40px;">
+    <h3 style="color: #1a73e8 !important; margin-bottom: 20px;">🤖💬 Human AI Advocate Assistant</h3>
     
-    <div style="margin: 20px 0; display: flex; justify-content: center; gap: 20px;">
-        <div>🎤 <strong>Voice Input</strong></div>
-        <div>🔊 <strong>Voice Output</strong></div>
-        <div>💬 <strong>Text Chat</strong></div>
-        <div>⚖️ <strong>Legal Guidance</strong></div>
+    <div style="display: flex; justify-content: center; gap: 30px; flex-wrap: wrap; margin: 30px 0;">
+        <div>
+            <div style="font-size: 2rem;">💬</div>
+            <div><strong>Real-time Chat</strong></div>
+            <div style="font-size: 0.9rem; color: #666;">Natural conversation</div>
+        </div>
+        <div>
+            <div style="font-size: 2rem;">🎯</div>
+            <div><strong>Actionable Advice</strong></div>
+            <div style="font-size: 0.9rem; color: #666;">Practical strategies</div>
+        </div>
+        <div>
+            <div style="font-size: 2rem;">⚖️</div>
+            <div><strong>Legal Guidance</strong></div>
+            <div style="font-size: 0.9rem; color: #666;">Rights protection</div>
+        </div>
+        <div>
+            <div style="font-size: 2rem;">🔗</div>
+            <div><strong>Resources</strong></div>
+            <div style="font-size: 0.9rem; color: #666;">Tools & templates</div>
+        </div>
     </div>
     
     <div style="border-top: 1px solid #ddd; padding-top: 20px; margin-top: 20px;">
-        <p style="color: #666; font-size: 0.9rem;">
-            Built for ethical AI advocacy • Supports multiple languages • Privacy-focused • {timestamp}
-        </p>
-    </div>
-</div>
-""".format(timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M")), unsafe_allow_html=True)
-
-# Real-time updates for conversation
-if st.checkbox("🔄 Enable real-time conversation updates", value=True):
-    time.sleep(2)
-    st.rerun()
